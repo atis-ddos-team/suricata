@@ -1098,7 +1098,7 @@ enum {
     DETECT_IPREP,
 
     DETECT_DUMMY,
-
+    DETECT_EDDOS,
     /* make sure this stays last */
     DETECT_TBLSIZE,
 };

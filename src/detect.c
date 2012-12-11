@@ -43,6 +43,8 @@
 #include "detect-engine-iponly.h"
 #include "detect-engine-threshold.h"
 
+#include "detect-egressDDOS.h"
+
 #include "detect-engine-payload.h"
 #include "detect-engine-dcepayload.h"
 #include "detect-engine-uri.h"
@@ -4741,6 +4743,7 @@ void SigTableSetup(void) {
     DetectCsumRegister();
     DetectStreamSizeRegister();
     DetectDummyRegister();
+    DetecteDDOSRegister();
     DetectTtlRegister();
     DetectTosRegister();
     DetectFastPatternRegister();

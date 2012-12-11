@@ -58,6 +58,7 @@ defrag-timeout.c defrag-timeout.h \
 detect-ack.c detect-ack.h \
 detect-app-layer-event.c detect-app-layer-event.h \
 detect-asn1.c detect-asn1.h \
+detect-egressDDOS.c detect-egressDDOS.h \
 detect-byte-extract.c detect-byte-extract.h \
 detect-bytejump.c detect-bytejump.h \
 detect-bytetest.c detect-bytetest.h \
