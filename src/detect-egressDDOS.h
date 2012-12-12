@@ -18,21 +18,28 @@
 /**
  * \file
  *
- * \author Christian Rossow <christian.rossow [at] gmail.com>
+ * \author ATIS-DDOS-TEAM
  */
+#include <time.h>
+#ifndef _DETECT_EDDOS_H
+#define	_DETECT_EDDOS_H
 
-#ifndef _DETECT_DUMMY_H
-#define	_DETECT_DUMMY_H
-
-#define DUMMY_HASH_SIZE 32768
+#define EDDOS_HASH_SIZE 32768
 
 typedef struct DetecteDDOSSig_ {
-    uint32_t max_numpackets; /**< max number of allowed packets */
-} DetectDummySig;
+    uint64_t max_numpackets; /**< max number of allowed packets */
+    time_t PeriodStart;/** < start time of this periode */
+} DetecteDDOSSig;
 
 typedef struct DetecteDDOSData_ {
-    uint32_t cnt_packets;   /** < number of packets sent */
-} DetectDummyData;
+    uint64_t cnt_packets; /** < number of packets sent */
+    uint64_t cnt_tcp; /** < number of tcp packets sent */
+    uint64_t cnt_udp; /** < number of udp packets sent */
+    uint64_t cnt_icmp_echo_req; /** < number of icmp echo request packets sent */
+    uint64_t cnt_tcp_ack; /** < number of tcp ack packets sent */
+    uint64_t cnt_tcp_syn; /** < number of tcp syn packets sent */
+
+} DetecteDDOSData;
 
 void DetecteDDOSRegister(void);
 

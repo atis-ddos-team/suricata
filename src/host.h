@@ -69,7 +69,7 @@ typedef struct Host_ {
     void *threshold;
     void *iprep;
     void *dummy;
-	void *eddos;
+    void *eddos;
     /** hash pointers, protected by hash row mutex/spin */
     struct Host_ *hnext;
     struct Host_ *hprev;

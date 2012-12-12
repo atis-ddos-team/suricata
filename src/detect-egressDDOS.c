@@ -18,14 +18,18 @@
 /**
  * \file
  *
- * \author Christian Rossow <christian.rossow [at] gmail.com>
+ * \author ATIS-DDOS-TEAM
  *
- * Implements the dummy keyword
+ * Implements some basic egress DDOS detection. 
+ * Currently trys to detect UDP-,SYN- and Echo-Floods. 
  */
 
 #include "suricata-common.h"
 #include "stream-tcp.h"
 #include "util-unittest.h"
+#include "decode-icmpv4.h"
+#include "detect-flags.h"
+#include <time.h>
 
 #include "detect.h"
 #include "detect-parse.h"
@@ -36,10 +40,10 @@
 #include "host.h"
 
 /*prototypes*/
-int DetecteDDOSMatch (ThreadVars *, DetectEngineThreadCtx *, Packet *, Signature *, SigMatch *);
-static int DetecteDDOSSetup (DetectEngineCtx *, Signature *, char *);
-void DetecteDDOSFree (void *);
-void DetectDummyRegisterTests (void);
+int DetecteDDOSMatch(ThreadVars *, DetectEngineThreadCtx *, Packet *, Signature *, SigMatch *);
+static int DetecteDDOSSetup(DetectEngineCtx *, Signature *, char *);
+void DetecteDDOSFree(void *);
+void DetecteDDOSRegisterTests(void);
 
 /**
  * \brief Registration function for `dummy` keyword
@@ -64,17 +68,18 @@ void DetecteDDOSRegister(void) {
  * \retval 0 no match
  * \retval 1 match
  */
-int DetecteDDOSMatch (ThreadVars *t, DetectEngineThreadCtx *det_ctx, Packet *p, Signature *s, SigMatch *m) {
+int DetecteDDOSMatch(ThreadVars *t, DetectEngineThreadCtx *det_ctx, Packet *p, Signature *s, SigMatch *m) {
 
     int ret = 0;
-    DetectDummySig *dsig = (DetectDummySig *) m->ctx;
-    DetectDummyData *ddata;
+    DetecteDDOSSig *dsig = (DetecteDDOSSig *) m->ctx;
+    DetecteDDOSData *ddata;
     Host *h;
+    time_t t1;
+    double time_diff_ms;
 
     if (PKT_IS_PSEUDOPKT(p)
-        || !PKT_IS_IPV4(p)
-        || p->flags & PKT_HOST_SRC_LOOKED_UP
-        || p->payload_len == 0) {
+            || !PKT_IS_IPV4(p)
+            || p->flags & PKT_HOST_SRC_LOOKED_UP) {
         return 0;
     }
 
@@ -82,7 +87,7 @@ int DetecteDDOSMatch (ThreadVars *t, DetectEngineThreadCtx *det_ctx, Packet *p, 
      * Suricata defines a `Packet` structure in decode.h which already defines 
      * many useful elements -- have a look! */
 
-    h = HostGetHostFromHash(&(p->src));
+    h = HostGetHostFromHash(&(p->src)); // Only SRC or can DEST be used too?
     p->flags |= PKT_HOST_SRC_LOOKED_UP;
 
     if (h == NULL) {
@@ -90,18 +95,49 @@ int DetecteDDOSMatch (ThreadVars *t, DetectEngineThreadCtx *det_ctx, Packet *p, 
         return 0;
     }
 
-    ddata = (DetectDummyData *) h->dummy;
+    ddata = (DetecteDDOSData *) h->eddos;
     if (!ddata) {
         /* initialize fresh dummydata */
-        ddata = SCMalloc(sizeof(DetectDummyData));
-        bzero(ddata, sizeof(DetectDummyData));
-        h->dummy = ddata;
+        ddata = SCMalloc(sizeof (DetecteDDOSData));
+        bzero(ddata, sizeof (DetecteDDOSData));
+        h->eddos = ddata;
     }
-    
+
     (ddata->cnt_packets)++;
-    //printf("host found, packets now %d\n", ddata->cnt_packets);
-    ret = (ddata->cnt_packets > dsig->max_numpackets);
-    
+
+    if (PKT_IS_TCP(p)) {
+        (ddata->cnt_tcp)++;
+        if (p->tcph->th_flags == TH_ACK) {
+            (ddata->cnt_tcp_ack)++;
+        }
+        if (p->tcph->th_flags == TH_SYN) {
+            (ddata->cnt_tcp_syn)++;
+        }
+    }
+
+
+
+    if (PKT_IS_UDP(p)) {
+        (ddata->cnt_udp)++;
+    }
+
+    if (PKT_IS_ICMPV4(p) && p->icmpv4h->type == ICMP_ECHO) {
+        (ddata->cnt_icmp_echo_req)++;
+    }
+
+
+    t1 = time(0);
+    time_diff_ms = difftime(t1, dsig->PeriodStart) * 1000.;
+    if (time_diff_ms > (100 * 60 * 60)) {
+        /*check for alarm here*/
+        printf("host found, packets now %d\n", ddata->cnt_packets);
+        ret = (ddata->cnt_packets > dsig->max_numpackets);
+        dsig->PeriodStart = time(0);
+    } else {
+        ret = 0;
+    }
+
+
     HostRelease(h);
     return ret;
 }
@@ -116,20 +152,24 @@ int DetecteDDOSMatch (ThreadVars *t, DetectEngineThreadCtx *det_ctx, Packet *p, 
  * \retval 0 on Success
  * \retval -1 on Failure
  */
-static int DetecteDDOSSetup (DetectEngineCtx *de_ctx, Signature *s, char *dummystr) {
+static int DetecteDDOSSetup(DetectEngineCtx *de_ctx, Signature *s, char *dummystr) {
 
     SigMatch *sm = NULL;
-    DetectDummySig *dsig = NULL;
-    
-    dsig = SCMalloc(sizeof(DetectDummySig));
-    if (dsig == NULL) { goto error; }
+    DetecteDDOSSig *dsig = NULL;
+
+    dsig = SCMalloc(sizeof (DetecteDDOSSig));
+    if (dsig == NULL) {
+        goto error;
+    }
 
     sm = SigMatchAlloc();
-    if (sm == NULL) { goto error; }
-
+    if (sm == NULL) {
+        goto error;
+    }
+    dsig->PeriodStart = time(0);
     dsig->max_numpackets = atoi(dummystr);
 
-    sm->type = DETECT_DUMMY;
+    sm->type = DETECT_EDDOS;
     sm->ctx = (void *) dsig;
 
     SigMatchAppendSMToList(s, sm, DETECT_SM_LIST_MATCH);
@@ -142,13 +182,13 @@ error:
     return -1;
 }
 
-void DetecteDDOSFree (void *ptr) {
+void DetecteDDOSFree(void *ptr) {
     DetecteDDOSData *ed = (DetecteDDOSData*) ptr;
     SCFree(ed);
 }
 
 void DetecteDDOSRegisterTests(void) {
-    #ifdef UNITTESTS
+#ifdef UNITTESTS
     // TODO
-    #endif
+#endif
 }
