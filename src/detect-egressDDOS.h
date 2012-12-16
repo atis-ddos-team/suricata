@@ -29,6 +29,11 @@
 typedef struct DetecteDDOSSig_ {
     uint64_t max_numpackets; /**< max number of allowed packets */
     time_t PeriodStart;/** < start time of this periode */
+    uint64_t max_tcppackets; /**< max number of allowed tcp packets */
+    uint64_t max_udppackets; /**< max number of allowed udp packets */
+    uint64_t max_icmp_echo_req_packets; /**< max number of allowed icmp echo request packets */
+    uint64_t max_tcp_ack_packets; /**< max number of allowed tcp_ack packets */
+    uint64_t max_tcp_syn_packets; /**< max number of allows tcp_syn packets */
 } DetecteDDOSSig;
 
 typedef struct DetecteDDOSData_ {

@@ -45,8 +45,18 @@ static int DetecteDDOSSetup(DetectEngineCtx *, Signature *, char *);
 void DetecteDDOSFree(void *);
 void DetecteDDOSRegisterTests(void);
 
+
 /**
- * \brief Registration function for `dummy` keyword
+ *  * \brief Regex for parsing our keyword options
+ *   */
+#define PARSE_REGEX  "^\\s*([0-9]+)?\\s*,s*([0-9]+)?\\s*$" 
+
+static pcre *parse_regex;
+static pcre_extra *parse_regex_study;
+
+
+/**
+ * \brief Registration function for `eDDOS` keyword
  */
 
 void DetecteDDOSRegister(void) {
@@ -55,10 +65,33 @@ void DetecteDDOSRegister(void) {
     sigmatch_table[DETECT_EDDOS].Setup = DetecteDDOSSetup;
     sigmatch_table[DETECT_EDDOS].Free = DetecteDDOSFree;
     sigmatch_table[DETECT_EDDOS].RegisterTests = DetecteDDOSRegisterTests;
+
+    const char *eb;
+    int eo;
+    int opts = 0;
+    parse_regex = pcre_compile(PARSE_REGEX, opts, &eb, &eo, NULL);
+    if (parse_regex == NULL) {
+        SCLogError(SC_ERR_PCRE_COMPILE, "pcre compile of \"%s\" failed at offset %" PRId32 ": %s", PARSE_REGEX, eo, eb);
+        goto error;
+    }
+
+    parse_regex_study = pcre_study(parse_regex, 0, &eb);
+    if (eb != NULL) {
+        SCLogError(SC_ERR_PCRE_STUDY, "pcre study failed: %s", eb);
+        goto error;
+    }
+    return;
+
+error:
+    if (parse_regex != NULL)
+        SCFree(parse_regex);
+    if (parse_regex_study != NULL)
+        SCFree(parse_regex_study);
+     return;
 }
 
 /**
- * \brief This function is used to match packets via the dummy rule
+ * \brief This function is used to match packets via the eDDOS rule
  *
  * \param t pointer to thread vars
  * \param det_ctx pointer to the pattern matcher thread
@@ -130,7 +163,7 @@ int DetecteDDOSMatch(ThreadVars *t, DetectEngineThreadCtx *det_ctx, Packet *p, S
     time_diff_ms = difftime(t1, dsig->PeriodStart) * 1000.;
     if (time_diff_ms > (100 * 60 * 60)) {
         /*check for alarm here*/
-        printf("host found, packets now %d\n", ddata->cnt_packets);
+        printf("host found, packets now %d\n", (int)(ddata->cnt_packets));
         ret = (ddata->cnt_packets > dsig->max_numpackets);
         dsig->PeriodStart = time(0);
     } else {
@@ -143,6 +176,70 @@ int DetecteDDOSMatch(ThreadVars *t, DetectEngineThreadCtx *det_ctx, Packet *p, S
 }
 
 /**
+ * \brief This function is used to parse eDDOS options passed via eDDOS: keyword
+ *
+ * \param eDDOSstr Pointer to the user provided eDDOS options
+ *
+ * \retval eDDOSd pointer to DetecteDDODSSig on success
+ * \retval NULL on failure
+ */
+
+DetecteDDOSSig *DetecteDDOSParse (char *eDDOSstr)
+{
+    DetecteDDOSSig *eDDOSd = NULL;
+    char *arg1 = NULL;
+    char *arg2 = NULL;
+#define MAX_SUBSTRINGS 30
+    int ret = 0, res = 0;
+    int ov[MAX_SUBSTRINGS];
+
+    ret = pcre_exec(parse_regex, parse_regex_study, eDDOSstr, strlen(eDDOSstr), 0, 0, ov, MAX_SUBSTRINGS);
+    if (ret != 3) {
+        SCLogError(SC_ERR_PCRE_MATCH, "parse error, ret %" PRId32 "", ret);
+        goto error;
+    }
+    const char *str_ptr;
+
+    res = pcre_get_substring((char *) eDDOSstr, ov, MAX_SUBSTRINGS, 1, &str_ptr);
+    if (res < 0) {
+        SCLogError(SC_ERR_PCRE_GET_SUBSTRING, "pcre_get_substring failed");
+        goto error;
+    }
+    arg1 = (char *) str_ptr;
+    SCLogDebug("Arg1 \"%s\"", arg1);
+
+    if (ret >= 3) {
+        res = pcre_get_substring((char *) eDDOSstr, ov, MAX_SUBSTRINGS, 2, &str_ptr);
+        if (res < 0) {
+            SCLogError(SC_ERR_PCRE_GET_SUBSTRING, "pcre_get_substring failed");
+            goto error;
+        }
+        arg2 = (char *) str_ptr;
+        SCLogDebug("Arg2 \"%s\"", arg2);
+
+    }
+
+    eDDOSd = SCMalloc(sizeof (DetecteDDOSData));
+    if (unlikely(eDDOSd == NULL))
+        goto error;
+    eDDOSd->max_tcppackets = (uint64_t)atoi(arg1);
+    eDDOSd->max_udppackets = (uint64_t)atoi(arg2);
+
+    SCFree(arg1);
+    SCFree(arg2);
+    return eDDOSd;
+
+error:
+    if (eDDOSd)
+        SCFree(eDDOSd);
+    if (arg1)
+        SCFree(arg1);
+    if (arg2)
+        SCFree(arg2);
+    return NULL;
+}
+
+/**
  * \brief this function is used to setup the dummy environment
  *
  * \param de_ctx pointer to the Detection Engine Context
@@ -152,7 +249,7 @@ int DetecteDDOSMatch(ThreadVars *t, DetectEngineThreadCtx *det_ctx, Packet *p, S
  * \retval 0 on Success
  * \retval -1 on Failure
  */
-static int DetecteDDOSSetup(DetectEngineCtx *de_ctx, Signature *s, char *dummystr) {
+static int DetecteDDOSSetup(DetectEngineCtx *de_ctx, Signature *s, char *ddosstr) {
 
     SigMatch *sm = NULL;
     DetecteDDOSSig *dsig = NULL;
@@ -166,8 +263,14 @@ static int DetecteDDOSSetup(DetectEngineCtx *de_ctx, Signature *s, char *dummyst
     if (sm == NULL) {
         goto error;
     }
-    dsig->PeriodStart = time(0);
-    dsig->max_numpackets = atoi(dummystr);
+
+
+    //dsig->PeriodStart = time(0);
+    //dsig->max_numpackets = atoi(dummystr);
+    /**
+     * Parse the ddosstring for option keywords
+     */
+    dsig = DetecteDDOSParse(ddosstr);
 
     sm->type = DETECT_EDDOS;
     sm->ctx = (void *) dsig;
@@ -189,6 +292,56 @@ void DetecteDDOSFree(void *ptr) {
 
 void DetecteDDOSRegisterTests(void) {
 #ifdef UNITTESTS
-    // TODO
-#endif
+
+/**
+ * \test description of the test
+ */
+
+static int DetecteDDOSParseTest01 (void) {
+    DetecteDDOSData *eDDOSd = NULL;
+    uint8_t res = 0;
+
+    eDDOSd = DetecteDDOSParse("1,10");
+    if (eDDOSd != NULL) {
+        if (eDDOSd->max_tcppackets == 1 && eDDOSd->max_udppackets == 10)
+            res = 1;
+
+        DetecteDDOSFree(eDDOSd);
+    }
+
+    return res;
+}
+
+static int DetecteDDOSSignatureTest01 (void) {
+    uint8_t res = 0;
+
+    DetectEngineCtx *de_ctx = DetectEngineCtxInit();
+    if (de_ctx == NULL)
+        goto end;
+
+    Signature *sig = DetectEngineAppendSig(de_ctx, "alert ip any any -> any any (eDDOS:1,10; sid:1; rev:1;)");
+    if (sig == NULL) {
+        printf("parsing signature failed: ");
+        goto end;
+    }
+
+    /* if we get here, all conditions pass */
+    res = 1;
+end:
+    if (de_ctx != NULL)
+        DetectEngineCtxFree(de_ctx);
+    return res;
+}
+
+#endif /* UNITTESTS */
+
+/**
+ * \brief this function registers unit tests for DetecteDDOS
+ */
+void DetecteDDOSRegisterTests(void) {
+#ifdef UNITTESTS
+    UtRegisterTest("DetecteDDOSParseTest01", DetecteDDOSParseTest01, 1);
+    UtRegisterTest("DetecteDDOSSignatureTest01", DetecteDDOSSignatureTest01, 1);
+#endif /* UNITTESTS */
+}
 }
