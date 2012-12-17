@@ -30,7 +30,7 @@
 #include "decode-icmpv4.h"
 #include "detect-flags.h"
 #include <time.h>
-
+#include "detect-engine.h"
 #include "detect.h"
 #include "detect-parse.h"
 
@@ -297,8 +297,8 @@ void DetecteDDOSRegisterTests(void) {
  * \test description of the test
  */
 
-static int DetecteDDOSParseTest01 (void) {
-    DetecteDDOSData *eDDOSd = NULL;
+int DetecteDDOSParseTest01 (void) {
+    DetecteDDOSSig *eDDOSd = NULL;
     uint8_t res = 0;
 
     eDDOSd = DetecteDDOSParse("1,10");
@@ -312,7 +312,7 @@ static int DetecteDDOSParseTest01 (void) {
     return res;
 }
 
-static int DetecteDDOSSignatureTest01 (void) {
+int DetecteDDOSSignatureTest01 (void) {
     uint8_t res = 0;
 
     DetectEngineCtx *de_ctx = DetectEngineCtxInit();
