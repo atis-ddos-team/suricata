@@ -290,14 +290,14 @@ void DetecteDDOSFree(void *ptr) {
     SCFree(ed);
 }
 
-void DetecteDDOSRegisterTests(void) {
+//void DetecteDDOSRegisterTests(void) {
 #ifdef UNITTESTS
 
 /**
  * \test description of the test
  */
 
-int DetecteDDOSParseTest01 (void) {
+static int DetecteDDOSParseTest01 (void) {
     DetecteDDOSSig *eDDOSd = NULL;
     uint8_t res = 0;
 
@@ -312,7 +312,7 @@ int DetecteDDOSParseTest01 (void) {
     return res;
 }
 
-int DetecteDDOSSignatureTest01 (void) {
+static int DetecteDDOSSignatureTest01 (void) {
     uint8_t res = 0;
 
     DetectEngineCtx *de_ctx = DetectEngineCtxInit();
@@ -344,4 +344,4 @@ void DetecteDDOSRegisterTests(void) {
     UtRegisterTest("DetecteDDOSSignatureTest01", DetecteDDOSSignatureTest01, 1);
 #endif /* UNITTESTS */
 }
-}
+//}
