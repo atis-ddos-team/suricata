@@ -49,7 +49,7 @@ void DetecteDDOSRegisterTests(void);
 /**
  *  * \brief Regex for parsing our keyword options
  *   */
-#define PARSE_REGEX  "^\\s*([0-9]+)?\\s*,s*([0-9]+)?\\s*$" 
+#define PARSE_REGEX  "^\\s*([0-9]+\\.[0-9]+)\\s*,s*([0-9]+\\.[0-9]+)\\s*,s*([0-9]+\\.[0-9]+)\\s*$" 
 
 static pcre *parse_regex;
 static pcre_extra *parse_regex_study;
@@ -135,7 +135,7 @@ int DetecteDDOSMatch(ThreadVars *t, DetectEngineThreadCtx *det_ctx, Packet *p, S
         bzero(ddata, sizeof (DetecteDDOSData));
         h->eddos = ddata;
     }
-
+    
     (ddata->cnt_packets)++;
 
     if (PKT_IS_TCP(p)) {
@@ -164,13 +164,14 @@ int DetecteDDOSMatch(ThreadVars *t, DetectEngineThreadCtx *det_ctx, Packet *p, S
     if (time_diff_ms > (100 * 60 * 60)) {
         /*check for alarm here*/
         printf("host found, packets now %d\n", (int)(ddata->cnt_packets));
-        ret = (ddata->cnt_packets > dsig->max_numpackets);
+        //ret = (ddata->cnt_packets > dsig->max_numpackets);
         dsig->PeriodStart = time(0);
     } else {
         ret = 0;
     }
-
-
+    
+    //printf("%d", ddata->cnt_udp);
+    ret=1;
     HostRelease(h);
     return ret;
 }
@@ -189,26 +190,33 @@ DetecteDDOSSig *DetecteDDOSParse (char *eDDOSstr)
     DetecteDDOSSig *eDDOSd = NULL;
     char *arg1 = NULL;
     char *arg2 = NULL;
+    char *arg3 = NULL;
 #define MAX_SUBSTRINGS 30
     int ret = 0, res = 0;
     int ov[MAX_SUBSTRINGS];
 
     ret = pcre_exec(parse_regex, parse_regex_study, eDDOSstr, strlen(eDDOSstr), 0, 0, ov, MAX_SUBSTRINGS);
-    if (ret != 3) {
+    //printf("\n%s\n", eDDOSstr);
+    if (ret != 4) {
         SCLogError(SC_ERR_PCRE_MATCH, "parse error, ret %" PRId32 "", ret);
         goto error;
     }
     const char *str_ptr;
-
+    // parse first paremeter "arg1" SYN/ACK abweichung
     res = pcre_get_substring((char *) eDDOSstr, ov, MAX_SUBSTRINGS, 1, &str_ptr);
+    //printf("\n%s\n",(char *) str_ptr);
     if (res < 0) {
         SCLogError(SC_ERR_PCRE_GET_SUBSTRING, "pcre_get_substring failed");
         goto error;
     }
+    
     arg1 = (char *) str_ptr;
     SCLogDebug("Arg1 \"%s\"", arg1);
 
     if (ret >= 3) {
+        /**
+         * parse second parameter "arg2" ICMP "port unreachable"
+         */ 
         res = pcre_get_substring((char *) eDDOSstr, ov, MAX_SUBSTRINGS, 2, &str_ptr);
         if (res < 0) {
             SCLogError(SC_ERR_PCRE_GET_SUBSTRING, "pcre_get_substring failed");
@@ -216,14 +224,27 @@ DetecteDDOSSig *DetecteDDOSParse (char *eDDOSstr)
         }
         arg2 = (char *) str_ptr;
         SCLogDebug("Arg2 \"%s\"", arg2);
+        
+        
+        /**
+         * parse third parameter "arg3" ICMP "echo request"
+         */ 
+        res = pcre_get_substring((char *) eDDOSstr, ov, MAX_SUBSTRINGS, 3, &str_ptr);
+        if (res < 0) {
+            SCLogError(SC_ERR_PCRE_GET_SUBSTRING, "pcre_get_substring failed");
+            goto error;     
+        }
+        arg3 = (char *) str_ptr;
+        SCLogDebug("Arg3 \"%s\"", arg3);
 
     }
 
     eDDOSd = SCMalloc(sizeof (DetecteDDOSData));
     if (unlikely(eDDOSd == NULL))
         goto error;
-    eDDOSd->max_tcppackets = (uint64_t)atoi(arg1);
-    eDDOSd->max_udppackets = (uint64_t)atoi(arg2);
+    eDDOSd->max_abweichung_syn_ack = atof(arg1);
+    eDDOSd->max_icmp_echo_req_packets = atof(arg2);
+    eDDOSd->max_verhaeltnis_udp_packets = atof(arg3);
 
     SCFree(arg1);
     SCFree(arg2);
@@ -290,21 +311,25 @@ void DetecteDDOSFree(void *ptr) {
     SCFree(ed);
 }
 
-//void DetecteDDOSRegisterTests(void) {
 #ifdef UNITTESTS
 
 /**
- * \test description of the test
+ * test description of the test
  */
 
 static int DetecteDDOSParseTest01 (void) {
     DetecteDDOSSig *eDDOSd = NULL;
     uint8_t res = 0;
 
-    eDDOSd = DetecteDDOSParse("1,10");
+    eDDOSd = DetecteDDOSParse("1.0,1.0,1.0");
     if (eDDOSd != NULL) {
-        if (eDDOSd->max_tcppackets == 1 && eDDOSd->max_udppackets == 10)
+        /**
+         * test first arg. as c can not test equals a float value we test against range
+         */
+        if (eDDOSd->max_abweichung_syn_ack > 0.5 && eDDOSd->max_abweichung_syn_ack < 1.5 && eDDOSd->max_icmp_echo_req_packets > 0.5 && eDDOSd->max_icmp_echo_req_packets < 1.5 && eDDOSd->max_verhaeltnis_udp_packets > 0.5 && eDDOSd->max_verhaeltnis_udp_packets < 1.5){
             res = 1;
+        }
+            
 
         DetecteDDOSFree(eDDOSd);
     }
@@ -319,7 +344,7 @@ static int DetecteDDOSSignatureTest01 (void) {
     if (de_ctx == NULL)
         goto end;
 
-    Signature *sig = DetectEngineAppendSig(de_ctx, "alert ip any any -> any any (eDDOS:1,10; sid:1; rev:1;)");
+    Signature *sig = DetectEngineAppendSig(de_ctx, "alert ip any any -> any any (eDDOS:10.1,10.1,10.1; sid:1; rev:1;)");
     if (sig == NULL) {
         printf("parsing signature failed: ");
         goto end;
