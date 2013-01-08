@@ -46,34 +46,7 @@ uint32_t HostGetActiveCount(void) {
  *  \retval 1 fully timed out, lets kill it
  */
 static int HostHostTimedOut(Host *h, struct timeval *ts) {
-    int tags = 0;
-    int thresholds = 0;
-
-    /** never prune a host that is used by a packet
-     *  we are currently processing in one of the threads */
-    if (SC_ATOMIC_GET(h->use_cnt) > 0) {
-        return 0;
-    }
-
-    if (h->iprep) {
-        if (SRepHostTimedOut(h) == 0)
-            return 0;
-
-        SCLogDebug("host %p reputation timed out", h);
-    }
-
-    if (h->tag && TagTimeoutCheck(h, ts) == 0) {
-        tags = 1;
-    }
-    if (h->threshold && ThresholdTimeoutCheck(h, ts) == 0) {
-        thresholds = 1;
-    }
-
-    if (tags || thresholds)
-        return 0;
-
-    SCLogDebug("host %p timed out", h);
-    return 1;
+    return 0;
 }
 
 /**
@@ -89,50 +62,7 @@ static int HostHostTimedOut(Host *h, struct timeval *ts) {
  */
 static uint32_t HostHashRowTimeout(HostHashRow *hb, Host *h, struct timeval *ts)
 {
-    uint32_t cnt = 0;
-
-    do {
-        if (SCMutexTrylock(&h->m) != 0) {
-            h = h->hprev;
-            continue;
-        }
-
-        Host *next_host = h->hprev;
-
-        /* check if the host is fully timed out and
-         * ready to be discarded. */
-        if (HostHostTimedOut(h, ts) == 1) {
-            /* remove from the hash */
-            if (h->hprev != NULL)
-                h->hprev->hnext = h->hnext;
-            if (h->hnext != NULL)
-                h->hnext->hprev = h->hprev;
-            if (hb->head == h)
-                hb->head = h->hnext;
-            if (hb->tail == h)
-                hb->tail = h->hprev;
-
-            h->hnext = NULL;
-            h->hprev = NULL;
-
-            HostClearMemory (h);
-
-            /* no one is referring to this host, use_cnt 0, removed from hash
-             * so we can unlock it and move it back to the spare queue. */
-            SCMutexUnlock(&h->m);
-
-            /* move to spare list */
-            HostMoveToSpare(h);
-
-            cnt++;
-        } else {
-            SCMutexUnlock(&h->m);
-        }
-
-        h = next_host;
-    } while (h != NULL);
-
-    return cnt;
+	return 0;
 }
 
 /**
@@ -142,29 +72,6 @@ static uint32_t HostHashRowTimeout(HostHashRow *hb, Host *h, struct timeval *ts)
  *
  *  \retval cnt number of timed out host
  */
-uint32_t HostTimeoutHash(struct timeval *ts) {
-    uint32_t idx = 0;
-    uint32_t cnt = 0;
-
-    for (idx = 0; idx < host_config.hash_size; idx++) {
-        HostHashRow *hb = &host_hash[idx];
-        if (hb == NULL)
-            continue;
-        if (HRLOCK_TRYLOCK(hb) != 0)
-            continue;
-
-        /* host hash bucket is now locked */
-
-        if (hb->tail == NULL) {
-            HRLOCK_UNLOCK(hb);
-            continue;
-        }
-
-        /* we have a host, or more than one */
-        cnt += HostHashRowTimeout(hb, hb->tail, ts);
-        HRLOCK_UNLOCK(hb);
-    }
-
-    return cnt;
+uint32_t HostTimeoutHash(struct timeval *ts) {	
+	return 0;
 }
-
