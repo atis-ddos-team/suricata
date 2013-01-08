@@ -182,23 +182,31 @@ int DetecteDDOSMatch(ThreadVars *t, DetectEngineThreadCtx *det_ctx, Packet *p, S
                 float ver_echoreq_norm;
                 // verhältnis von udp pakten zu allen paketen
                 float ver_udp_norm;
+                if (ddata->cnt_tcp_ack!=0){
+                    ver_syn_ack =((float)(ddata->cnt_tcp_syn) / ddata->cnt_tcp_ack);
+                } else {
+                    ver_syn_ack = 0;
+                }
                 
-                ver_syn_ack =((float)(ddata->cnt_tcp_syn) / ddata->cnt_tcp_ack);
-                abw_syn_ack = (((1/3)- ver_syn_ack))*3/100;
+                abw_syn_ack = (((1/3)- ver_syn_ack))*3;
                 if (abw_syn_ack < 0) {
+                        
                         // check if abweichung größer als in signatur angegeben
                         if (fabs(abw_syn_ack) > dsig->max_abweichung_syn_ack){
                                 ret = 1;
+                                printf("\nSYN/ACK Host Value: %f # SYN: %llu - ACK: %llu\n", (abw_syn_ack), ddata->cnt_tcp_syn, ddata->cnt_tcp_ack);
+                                
                         }
                 }
 
                 
                 // verhältnis icmp echo request berechnen
-                ver_echoreq_norm = ((float)(ddata->cnt_icmp_echo_req) / ddata->cnt_packets);
+                ver_echoreq_norm = ((float)(ddata->cnt_icmp_echo_req) / ddata->cnt_packets)*100;
                 
                 // check if ICMP echo request pakete zu viel im verhältnis zu allen
                 if ( ver_echoreq_norm > (float)(dsig->max_icmp_echo_req_packets)) {
                     ret = 1;
+                    printf("\nICMP Host\n");
                 }
                 /**
                 // verhältnis udp paketen berechnen
@@ -215,27 +223,41 @@ int DetecteDDOSMatch(ThreadVars *t, DetectEngineThreadCtx *det_ctx, Packet *p, S
                 if (time_diff_ms > (60)) {
                     // auswertung udp pakete
                     // verhältnis udp paketen berechnen
-                    ver_udp_norm = ((float)(udp_pkt_gesamt) / (udp_pkt_gesamt+tcp_pkts_gesamt));
+                    ver_udp_norm = ((float)(udp_pkt_gesamt) / (udp_pkt_gesamt+tcp_pkts_gesamt))*100;
+                    //printf("UDP Pakete Verhaeltnis: %f", ver_udp_norm);
                     // check if udp pakete zu viel im verhältnis zu allen
                     if ( ver_udp_norm > (float)(dsig->max_verhaeltnis_udp_packets) ) {
                         ret = 1;
+                        printf("\nUDP ALL\n");
                     }
                     
                     // auswertung echo requests
-                    ver_echoreq_norm = ((float)(icmp_gesamt) / (udp_pkt_gesamt+tcp_pkts_gesamt));
+                    ver_echoreq_norm = ((float)(icmp_gesamt) / (udp_pkt_gesamt+tcp_pkts_gesamt))*100;
                     if ( ver_echoreq_norm > (float)(icmp_gesamt)) {
                         ret = 1;
+                        printf("\nICMP ALL\n");
                     }
                     
                     // auswertung syn/ack
-                        ver_syn_ack =((float)(tcp_syn_gesamt) / tcp_ack_gesamt);
-                        abw_syn_ack = (((1/3)- ver_syn_ack))*3/100;
+                        if (tcp_ack_gesamt!=0){
+                            ver_syn_ack =((float)(tcp_syn_gesamt) / tcp_ack_gesamt);
+                        } else {
+                            ver_syn_ack = 0;
+                        }
+                        
+                        abw_syn_ack = (((1/3)- ver_syn_ack))*3;
                         if (abw_syn_ack < 0) {
                                 // check if abweichung größer als in signatur angegeben
                                 if (fabs(abw_syn_ack) > dsig->max_abweichung_syn_ack){
                                         ret = 1;
+                                        printf("\nSYN/ACK ALL\n");
                                 }
                         }
+                    tcp_pkts_gesamt=0;
+                    udp_pkt_gesamt=0;
+                    tcp_syn_gesamt=0;
+                    tcp_ack_gesamt=0;
+                    icmp_gesamt=0;
                     
                     
                 }
@@ -269,12 +291,13 @@ int DetecteDDOSMatch(ThreadVars *t, DetectEngineThreadCtx *det_ctx, Packet *p, S
     printf("\n Packets UDP gesamt: %d \n", ddata->cnt_udp);
     printf("\n ICMP ECHO REQUEST Packets: %d \n", ddata->cnt_icmp_echo_req);
     printf("#################################\n");
-    */
+    
     printf("\n\nTCP Gesamt: %d\n",tcp_pkts_gesamt);
     printf("UDP Gesamt: %d\n",udp_pkt_gesamt);
     printf("SYN: %d\n",tcp_syn_gesamt);
     printf("ACK: %d\n",tcp_ack_gesamt);
     printf("ICMP: %d\n\n",icmp_gesamt);
+    */
     HostRelease(h);
     return ret;
 }
