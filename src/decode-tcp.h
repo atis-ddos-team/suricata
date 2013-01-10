@@ -33,7 +33,9 @@
 /* TCP flags */
 
 #define TH_FIN                               0x01
+#define TH_FIN_ACK                           0x11
 #define TH_SYN                               0x02
+#define TH_SYN_ACK                           0x12
 #define TH_RST                               0x04
 #define TH_PUSH                              0x08
 #define TH_ACK                               0x10

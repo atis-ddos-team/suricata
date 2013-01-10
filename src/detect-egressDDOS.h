@@ -44,8 +44,9 @@ typedef struct DetecteDDOSData_ {
     uint64_t cnt_tcp; /** < number of tcp packets sent */
     uint64_t cnt_udp; /** < number of udp packets sent */
     uint64_t cnt_icmp_echo_req; /** < number of icmp echo request packets sent */
-    uint64_t cnt_tcp_ack; /** < number of tcp ack packets sent */
-    uint64_t cnt_tcp_syn; /** < number of tcp syn packets sent */
+    uint64_t cnt_tcp_syn_ack; /** < number of tcp ack packets sent */
+    uint64_t cnt_tcp_fin_ack; /** < number of tcp syn packets sent */
+    uint64_t cnt_tcp_syn; /** < number of tcp syn pakets*/
 
 } DetecteDDOSData;
 
